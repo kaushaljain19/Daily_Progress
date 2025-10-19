@@ -1,4 +1,3 @@
-
 import { Injectable, NestMiddleware } from '@nestjs/common';
 import { Request, Response, NextFunction } from 'express';
 
@@ -9,5 +8,3 @@ export class LoggerMiddleware implements NestMiddleware {
     next();
   }
 }
-
-
