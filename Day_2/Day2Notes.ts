@@ -129,14 +129,35 @@ Techniques -
 
 ***************Configuration*****************
 
+1. @nestjs/config package internally uses dotenv.
+
+2. ConfigModule.forRoot() - Loads and parses .env file from default location (project root)
+
+3. global - ConfigModule.forRoot({
+  isGlobal: true,
+});
 
 
+*************** Validation ****************
+
+To automatically validate incoming requests, Nest provides several 
+pipes available right out-of-the-box. These are ready-to-use tools that 
+check data for you. The built-in pipes include:
+
+ValidationPipe: The main pipe for checking data against rules you define in your classes.
+
+ParseIntPipe: Converts strings to integers and validates they are numbers.
+
+ParseBoolPipe: Converts strings to boolean values (true/false).
+
+ParseArrayPipe: Handles arrays of data, like multiple items in a query.
+
+ParseUUIDPipe: Checks if a value is a valid UUID format (like unique identifiers).
 
 
-
-
-
-
+The ValidationPipe provides a convenient approach to enforce 
+validation rules for all incoming client payloads. Here, "payloads" 
+means the data sent in requests (like POST body, query params, or route params).
 
 
 
