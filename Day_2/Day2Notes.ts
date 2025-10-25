@@ -132,10 +132,24 @@ Techniques -
 1. @nestjs/config package internally uses dotenv.
 
 2. ConfigModule.forRoot() - Loads and parses .env file from default location (project root)
+   basically reads .env file 
+
+3. ConfigService - in this thing env variables are stored and can be 
+   accessed throughout the app 
+
+4. we have to inject ConfigService wherever we want to use env variables with the help of DI
+
+5. configService.get('KEY_NAME') - to access specific env variable
+
 
 3. global - ConfigModule.forRoot({
   isGlobal: true,
 });
+
+
+******************** Database Connection ********************
+
+
 
 
 *************** Validation ****************
@@ -160,11 +174,25 @@ validation rules for all incoming client payloads. Here, "payloads"
 means the data sent in requests (like POST body, query params, or route params).
 
 
+**********************Logging************************
+
+1. NestJS has a built-in Logger class that provides a simple 
+   and consistent way to log messages within your application.
+   we  can add some customization to the default logger behavior by
+   extending the Logger class and overriding its methods.
+
+2. Disabling the Logger Completely - logger:false
+
+3. const app = await NestFactory.create(AppModule, {
+    logger: ['error', 'warn'],
+  }); - only log error and warn messages will be shown 
+
+4. we can implement custom logger by extending Logger class
 
 
 
 
-
+  
 
 
 
