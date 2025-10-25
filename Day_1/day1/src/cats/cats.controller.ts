@@ -1,4 +1,4 @@
-import { Controller, Get, Req, Query, Redirect } from '@nestjs/common';
+import { Controller, Get, Req, Query, Redirect,Post,HttpCode,Header,Param } from '@nestjs/common';
 import type { Request } from 'express';
 import { HttpException, HttpStatus } from '@nestjs/common';
 
@@ -33,10 +33,48 @@ export class CatsController {
 
 // Exception filtering example
 
+// @Get()
+// async findAll() {
+//   throw new HttpException('Forbidden', HttpStatus.FORBIDDEN);
+// }
+
 @Get()
-async findAll() {
-  throw new HttpException('Forbidden', HttpStatus.FORBIDDEN);
+find()
+{ 
+  return "hello"; 
 }
- 
+
+
+// @Get('abcd/*path') // according new express version wildcard should be defined as *path
+// findAll() {
+//   return 'This route uses a wildcard';
+// }
+
+// @Post()
+// @HttpCode(204) // 204 - No Content
+// create( ) {
+//   return "custom exception code checking"
+// }
+
+
+// @Post()
+// @HttpCode(204)
+// @Header('Cache-Control', 'no stroe')
+// create()
+// { 
+//   return "check header decorator"
+// }
+
+//  @Get(':id')
+//   findOne(@Param() params: any): string {
+//     console.log(params.id);
+//     return `This action returns a #${params.id} cat`;
+//   }
+
+
+//  @Get(':id')
+//   findOne(@Param('id') id: string): string {
+//     return `This action returns a #${id} cat`;
+//   }
 
 }

@@ -146,6 +146,19 @@ export class CatsController {
   }
 }
 
+Example 1 - creation basic get req and findAll() method 
+
+example 2 - wild card route 
+
+example 3 - custom httpStatus code using @HttpCode() decorator
+
+example 4 - custor response Header
+
+ex 5 - dynamic redirect using @Redirect() decorator
+
+ex 6 - param releted
+
+ex 7 - subdomain routing 
 
 
 ******************** Provider*******************
@@ -155,6 +168,27 @@ Providers are a fundamental concept in NestJS.
 Many essential Nest classes such as services
 repositories, factories, and helpers can be 
 treated as providers.
+
+Default behavior: Singleton pattern
+
+Application start → Provider create
+
+Application end → Provider destroy
+
+
+singleton - ek hi instance pura application me use hota hai for any service by default 
+
+controller1 → uses same service instance
+controller2 → uses same service instance  
+controller3 → uses same service instance
+
+REQUEST scope - har request ke liye naya instance
+
+TRANSIENT scope - har injection ke liye naya instance
+
+
+
+ex - 1 
 
 **************** Module **********************
 
@@ -171,6 +205,26 @@ which serves as the starting point for Nest to build the application graph.
 
 4. @Global() decorator modules ko everywhere available 
    banata hai (sirf once register)
+
+   Nest mein modules by defaultsingletons hote hain
+
+
+   Agar CatsService ko har module mein directly register karenge, 
+   toh har module apna separate instance banega. Yeh:
+
+Memory usage increase karega (multiple instances)
+
+Unexpected behavior cause kar sakta (state inconsistency)
+
+Module mein encapsulate karke aur export karke, same 
+instance reuse hota hai across modules. Yeh:
+
+Memory consumption reduce karta hai
+
+Predictable behavior deta hai
+
+Shared state management easy karta hai
+
 
    ****************** Middleware **********************
 
@@ -190,6 +244,14 @@ if the current middleware function does not end the request-response cycle,
 it must call next() to pass control to the next middleware function. 
 Otherwise, the request will be left hanging.
 
+
+You can implement custom Nest middleware either in a function or 
+in a class with an @Injectable() decorator. The class should implement 
+the NestMiddleware interface, while the function has no special requirements. 
+First, we will implement a simple middleware feature using the class method.
+
+
+ex- 1 - 
 
 ************* Exception Filters **********************
 
