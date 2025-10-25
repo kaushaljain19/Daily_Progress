@@ -15,7 +15,7 @@ export class Developer {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @OneToOne(() => User, (user) => user.developer)
+  @OneToOne(() => User, { nullable: true })
   @JoinColumn()
   user: User;
 
