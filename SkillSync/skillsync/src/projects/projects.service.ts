@@ -1,11 +1,14 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource } from 'typeorm';
+import { Repository } from 'typeorm';
 import { Project } from './entities/project.entity';
+import { Developer } from '../developers/entities/developer.entity'; 
 import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
 import { ProjectResponseDto } from './dto/project-response.dto';
 import { RecommendedDeveloperResponseDto } from './dto/recommended-developer-response.dto';
+import { PaginationQueryDto } from '../common/dto/pagination-query.dto'; 
+import { PaginatedResponseDto } from '../common/dto/meta-pagination.dto'; 
 import { UsersService } from '../users/users.service';
 import { Role } from '../common/enums/role.enum';
 import { ProjectStatus } from '../common/enums/project-status.enum';
@@ -15,8 +18,9 @@ export class ProjectsService {
   constructor(
     @InjectRepository(Project)
     private projectsRepository: Repository<Project>,
+    @InjectRepository(Developer) 
+    private developersRepository: Repository<Developer>,
     private usersService: UsersService,
-    private dataSource: DataSource,
   ) {}
 
   async create(clientId: string, createProjectDto: CreateProjectDto): Promise<ProjectResponseDto> {
@@ -36,29 +40,51 @@ export class ProjectsService {
     return this.toDto(saved);
   }
 
+  
   async findAll(
-    skill?: string,
+    paginationQuery: PaginationQueryDto,
+    skill?: string | string[],
     status?: string,
-    page: number = 1,
-    limit: number = 20,
-  ): Promise<ProjectResponseDto[]> {
-    const query = this.projectsRepository.createQueryBuilder('project')
+  ): Promise<PaginatedResponseDto<ProjectResponseDto>> {
+    
+    const queryBuilder = this.projectsRepository
+      .createQueryBuilder('project')
       .leftJoinAndSelect('project.client', 'client');
 
+    // Handle multiple skills (AND logic - same as developers)
     if (skill) {
-      query.andWhere('project.requiredSkills LIKE :skill', { skill: `%${skill}%` });
+      let skillsArray: string[] = [];
+      
+      if (typeof skill === 'string') {
+        skillsArray = skill.split(',').map(s => s.trim()).filter(s => s.length > 0);
+      } else if (Array.isArray(skill)) {
+        skillsArray = skill.map(s => s.trim()).filter(s => s.length > 0);
+      }
+
+      if (skillsArray.length > 0) {
+        skillsArray.forEach((s, index) => {
+          queryBuilder.andWhere(`project.requiredSkills LIKE :skill${index}`, {
+            [`skill${index}`]: `%${s}%`,
+          });
+        });
+      }
     }
 
     if (status) {
-      query.andWhere('project.status = :status', { status });
+      queryBuilder.andWhere('project.status = :status', { status });
     }
 
-    const skip = (page - 1) * limit;
-    query.skip(skip).take(limit);
+    queryBuilder
+      .orderBy('project.createdAt', 'DESC')
+      .skip(paginationQuery.skip)
+      .take(paginationQuery.limit);
 
-    const projects = await query.getMany();
-    return projects.map(p => this.toDto(p));
+    const [projects, totalItems] = await queryBuilder.getManyAndCount();
+    const projectDtos = projects.map(p => this.toDto(p));
+    
+    return new PaginatedResponseDto(projectDtos, totalItems, paginationQuery);
   }
+  
 
   async findOne(id: string): Promise<ProjectResponseDto> {
     const project = await this.projectsRepository.findOne({
@@ -104,11 +130,12 @@ export class ProjectsService {
     }
   }
 
-  // ========== ONLY THIS METHOD CHANGED ==========
+ 
   async getRecommendedDevelopers(
     projectId: string,
-    limit: number = 10,
-  ): Promise<RecommendedDeveloperResponseDto[]> {
+    paginationQuery: PaginationQueryDto,
+  ): Promise<PaginatedResponseDto<RecommendedDeveloperResponseDto>> {
+    
     const project = await this.projectsRepository.findOne({ 
       where: { id: projectId } 
     });
@@ -117,37 +144,27 @@ export class ProjectsService {
       throw new NotFoundException(`Project with ID ${projectId} not found`);
     }
 
-    // Simple query - no JSON operations
-    const query = `
-      SELECT * FROM developers
-      ORDER BY createdAt DESC
-      LIMIT ?
-    `;
+    // Fetch all developers using QueryBuilder (NO RAW SQL!)
+    const allDevelopers = await this.developersRepository
+      .createQueryBuilder('developer')
+      .orderBy('developer.createdAt', 'DESC')
+      .getMany();
 
-    const developers = await this.dataSource.query(query, [limit * 2]);
-
-    // Process developers - handle comma-separated skills
-    const scoredDevelopers = developers.map(developer => {
-      // Parse skills from comma-separated string
-      let devSkills: string[] = [];
-      if (developer.skills) {
-        if (typeof developer.skills === 'string') {
-          devSkills = developer.skills.split(',').map(s => s.trim());
-        } else if (Array.isArray(developer.skills)) {
-          devSkills = developer.skills;
-        }
-      }
+    // Score and filter developers
+    const scoredDevelopers = allDevelopers.map(developer => {
+      const devSkills = developer.skills || [];
+      const requiredSkills = project.requiredSkills || [];
 
       // Find matched skills
-      const matchedSkills = project.requiredSkills.filter(skill =>
+      const matchedSkills = requiredSkills.filter(skill =>
         devSkills.some(devSkill => 
           devSkill.toLowerCase().trim() === skill.toLowerCase().trim()
         )
       );
 
       // Calculate percentage
-      const matchPercentage = project.requiredSkills.length > 0
-        ? Math.round((matchedSkills.length / project.requiredSkills.length) * 100)
+      const matchPercentage = requiredSkills.length > 0
+        ? Math.round((matchedSkills.length / requiredSkills.length) * 100)
         : 0;
 
       return {
@@ -163,12 +180,19 @@ export class ProjectsService {
       };
     });
 
-    return scoredDevelopers
+    // Filter and sort
+    const filteredDevelopers = scoredDevelopers
       .filter(d => d.matchPercentage > 0)
-      .sort((a, b) => b.matchPercentage - a.matchPercentage)
-      .slice(0, limit);
+      .sort((a, b) => b.matchPercentage - a.matchPercentage);
+
+    // Apply pagination
+    const totalItems = filteredDevelopers.length;
+    const { skip, limit } = paginationQuery;
+    const paginatedDevelopers = filteredDevelopers.slice(skip, skip + limit);
+
+    return new PaginatedResponseDto(paginatedDevelopers, totalItems, paginationQuery);
   }
-  // ========== END OF CHANGE ==========
+ 
 
   private toDto(project: Project): ProjectResponseDto {
     return {

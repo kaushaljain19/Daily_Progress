@@ -6,13 +6,16 @@ import { CreateDeveloperDto } from './dto/create-developer.dto';
 import { UpdateDeveloperDto } from './dto/update-developer.dto';
 import { DeveloperResponseDto } from './dto/developer-response.dto';
 import { RecommendedProjectResponseDto } from './dto/recommended-project-response.dto';
-
+import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
+import { PaginatedResponseDto } from '../common/dto/meta-pagination.dto';
+import { Project } from '../projects/entities/project.entity';
 @Injectable()
 export class DevelopersService {
-  constructor(
+   constructor(
     @InjectRepository(Developer)
     private developersRepository: Repository<Developer>,
-    private dataSource: DataSource,
+    @InjectRepository(Project) 
+    private projectsRepository: Repository<Project>,
   ) {}
 
   async create(createDeveloperDto: CreateDeveloperDto): Promise<DeveloperResponseDto> {
@@ -21,28 +24,56 @@ export class DevelopersService {
     return this.toDto(saved);
   }
 
-  async findAll(
-    skill?: string,
-    experience?: string,
-    page: number = 1,
-    limit: number = 20,
-  ): Promise<DeveloperResponseDto[]> {
-    const query = this.developersRepository.createQueryBuilder('developer');
+ async findAll(
+  paginationQuery: PaginationQueryDto,
+  skill?: string | string[],
+  experience?: string,
+): Promise<PaginatedResponseDto<DeveloperResponseDto>> {
+  
+  const queryBuilder = this.developersRepository.createQueryBuilder('developer');
 
-    if (skill) {
-      query.andWhere('developer.skills LIKE :skill', { skill: `%${skill}%` });
+
+  if (skill) {
+    // Convert to array format
+    let skillsArray: string[] = [];
+    
+    if (typeof skill === 'string') {
+      // If comma-separated string: "React,Node.js,TypeScript"
+      skillsArray = skill.split(',').map(s => s.trim()).filter(s => s.length > 0);
+    } else if (Array.isArray(skill)) {
+      // If already an array: ["React", "Node.js", "TypeScript"]
+      skillsArray = skill.map(s => s.trim()).filter(s => s.length > 0);
     }
 
-    if (experience) {
-      query.andWhere('developer.experienceLevel = :experience', { experience });
+    // Build WHERE clause for multiple skills (AND condition)
+    // Developer must have ALL specified skills
+    if (skillsArray.length > 0) {
+      skillsArray.forEach((s, index) => {
+        queryBuilder.andWhere(`developer.skills LIKE :skill${index}`, {
+          [`skill${index}`]: `%${s}%`,
+        });
+      });
     }
-
-    const skip = (page - 1) * limit;
-    query.skip(skip).take(limit);
-
-    const developers = await query.getMany();
-    return developers.map(dev => this.toDto(dev));
   }
+ 
+
+  if (experience) {
+    queryBuilder.andWhere('developer.experienceLevel = :experience', { experience });
+  }
+
+  queryBuilder
+    .orderBy('developer.createdAt', 'DESC')
+    .skip(paginationQuery.skip)
+    .take(paginationQuery.limit);
+
+  const [developers, totalItems] = await queryBuilder.getManyAndCount();
+  const developerDtos = developers.map(dev => this.toDto(dev));
+  
+  return new PaginatedResponseDto(developerDtos, totalItems, paginationQuery);
+}
+
+
+
 
   async findOne(id: string): Promise<DeveloperResponseDto> {
     const developer = await this.developersRepository.findOne({ where: { id } });
@@ -70,74 +101,74 @@ export class DevelopersService {
     }
   }
 
-  // ========== ONLY THIS METHOD CHANGED ==========
+  
   async getRecommendedProjects(
-    developerId: string,
-    limit: number = 10,
-  ): Promise<RecommendedProjectResponseDto[]> {
-    const developer = await this.developersRepository.findOne({ 
-      where: { id: developerId } 
-    });
-    
-    if (!developer) {
-      throw new NotFoundException(`Developer with ID ${developerId} not found`);
-    }
-
-    // Simple query - no JSON operations
-    const query = `
-      SELECT * FROM projects
-      WHERE status = 'open'
-      ORDER BY createdAt DESC
-      LIMIT ?
-    `;
-
-    const projects = await this.dataSource.query(query, [limit * 2]);
-
-    // Process projects - handle comma-separated skills
-    const scoredProjects = projects.map(project => {
-      // Parse skills from comma-separated string
-      let requiredSkills: string[] = [];
-      if (project.requiredSkills) {
-        if (typeof project.requiredSkills === 'string') {
-          requiredSkills = project.requiredSkills.split(',').map(s => s.trim());
-        } else if (Array.isArray(project.requiredSkills)) {
-          requiredSkills = project.requiredSkills;
-        }
-      }
-
-      // Find matched skills
-      const matchedSkills = requiredSkills.filter(skill =>
-        developer.skills.some(devSkill => 
-          devSkill.toLowerCase().trim() === skill.toLowerCase().trim()
-        )
-      );
-
-      // Calculate percentage
-      const matchPercentage = requiredSkills.length > 0
-        ? Math.round((matchedSkills.length / requiredSkills.length) * 100)
-        : 0;
-
-      return {
-        project: {
-          id: project.id,
-          title: project.title,
-          description: project.description,
-          requiredSkills: requiredSkills,
-          budget: project.budget,
-          duration: project.duration,
-        },
-        matchedSkills: matchedSkills,
-        matchPercentage: matchPercentage,
-      };
-    });
-
-    return scoredProjects
-      .filter(p => p.matchPercentage > 0)
-      .sort((a, b) => b.matchPercentage - a.matchPercentage)
-      .slice(0, limit);
+  developerId: string,
+  paginationQuery: PaginationQueryDto,
+): Promise<PaginatedResponseDto<RecommendedProjectResponseDto>> {
+  
+  // Find the developer
+  const developer = await this.developersRepository.findOne({ 
+    where: { id: developerId } 
+  });
+  
+  if (!developer) {
+    throw new NotFoundException(`Developer with ID ${developerId} not found`);
   }
-  // ========== END OF CHANGE ==========
 
+  // Fetch all open projects using QueryBuilder
+  const allProjects = await this.projectsRepository
+    .createQueryBuilder('project')
+    .where('project.status = :status', { status: 'open' })
+    .orderBy('project.createdAt', 'DESC')
+    .getMany();
+
+  // Score and filter projects based on skill matching
+  const scoredProjects = allProjects.map(project => {
+    
+    const requiredSkills = project.requiredSkills || [];
+
+    // Find matching skills between developer and project
+    const matchedSkills = requiredSkills.filter(skill =>
+      developer.skills.some(devSkill => 
+        devSkill.toLowerCase().trim() === skill.toLowerCase().trim()
+      )
+    );
+
+    // Calculate match percentage
+    const matchPercentage = requiredSkills.length > 0
+      ? Math.round((matchedSkills.length / requiredSkills.length) * 100)
+      : 0;
+
+    return {
+      project: {
+        id: project.id,
+        title: project.title,
+        description: project.description,
+        requiredSkills: requiredSkills,
+        budget: project.budget,
+        duration: project.duration,
+      },
+      matchedSkills: matchedSkills,
+      matchPercentage: matchPercentage,
+    };
+  });
+
+  // Filter projects with at least some match and sort by percentage
+  const filteredProjects = scoredProjects
+    .filter(p => p.matchPercentage > 0)
+    .sort((a, b) => b.matchPercentage - a.matchPercentage);
+
+  // Apply in-memory pagination
+  const totalItems = filteredProjects.length;
+  const { skip, limit } = paginationQuery;
+  const paginatedProjects = filteredProjects.slice(skip, skip + limit);
+
+  return new PaginatedResponseDto(paginatedProjects, totalItems, paginationQuery);
+}
+
+
+// show only needed information to the client
   private toDto(developer: Developer): DeveloperResponseDto {
     return {
       id: developer.id,
@@ -150,3 +181,6 @@ export class DevelopersService {
     };
   }
 }
+
+
+

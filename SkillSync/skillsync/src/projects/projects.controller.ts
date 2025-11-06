@@ -16,6 +16,7 @@ import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
 import { ProjectResponseDto } from './dto/project-response.dto';
 import { RecommendedDeveloperResponseDto } from './dto/recommended-developer-response.dto';
+import { PaginationQueryDto } from '../common/dto/pagination-query.dto'; // ADD THIS IMPORT
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -41,14 +42,14 @@ export class ProjectsController {
     return this.projectsService.create(req.user.userId, createProjectDto);
   }
 
+  // ========== UPDATED WITH PAGINATION ==========
   @Get()
-  @ApiOperation({ summary: 'Get all projects with optional filters' })
-  @ApiResponse({ status: 200, type: [ProjectResponseDto], description: 'List of projects' })
+  @ApiOperation({ summary: 'Get all projects with pagination and filters' })
   @ApiQuery({ 
     name: 'skill', 
     required: false, 
     type: String, 
-    description: 'Filter projects by required skill (e.g., "React")' 
+    description: 'Filter by required skills (comma-separated or multiple params, AND logic)' 
   })
   @ApiQuery({ 
     name: 'status', 
@@ -56,26 +57,14 @@ export class ProjectsController {
     type: String, 
     description: 'Filter by project status (open, in_progress, completed, cancelled)' 
   })
-  @ApiQuery({ 
-    name: 'page', 
-    required: false, 
-    type: Number, 
-    description: 'Page number for pagination (default: 1)' 
-  })
-  @ApiQuery({ 
-    name: 'limit', 
-    required: false, 
-    type: Number, 
-    description: 'Number of items per page (default: 20)' 
-  })
   async findAll(
-    @Query('skill') skill?: string,
+    @Query() paginationQuery: PaginationQueryDto, // CHANGED: Use DTO
+    @Query('skill') skill?: string | string[],    // CHANGED: Support multiple skills
     @Query('status') status?: string,
-    @Query('page') page?: number,
-    @Query('limit') limit?: number,
-  ): Promise<ProjectResponseDto[]> {
-    return this.projectsService.findAll(skill, status, page, limit);
+  ) {
+    return this.projectsService.findAll(paginationQuery, skill, status);
   }
+  // ========== END OF UPDATE ==========
 
   @Get('my-projects')
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -97,26 +86,21 @@ export class ProjectsController {
     return this.projectsService.findOne(id);
   }
 
+  
   @Get(':id/recommended-developers')
-  @ApiOperation({ summary: 'Get recommended developers for project based on skill matching' })
+  @ApiOperation({ summary: 'Get recommended developers for project with pagination' })
   @ApiResponse({ 
     status: 200, 
-    type: [RecommendedDeveloperResponseDto], 
-    description: 'List of matching developers with match percentage' 
+    description: 'Paginated list of matching developers with match percentage' 
   })
   @ApiResponse({ status: 404, description: 'Project not found' })
-  @ApiQuery({ 
-    name: 'limit', 
-    required: false, 
-    type: Number, 
-    description: 'Maximum number of results to return (default: 10)' 
-  })
   async getRecommendedDevelopers(
     @Param('id') id: string,
-    @Query('limit') limit?: number,
-  ): Promise<RecommendedDeveloperResponseDto[]> {
-    return this.projectsService.getRecommendedDevelopers(id, limit);
+    @Query() paginationQuery: PaginationQueryDto, 
+  ) {
+    return this.projectsService.getRecommendedDevelopers(id, paginationQuery);
   }
+  
 
   @Patch(':id')
   @UseGuards(JwtAuthGuard, RolesGuard)

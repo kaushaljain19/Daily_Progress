@@ -19,6 +19,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { Role } from '../common/enums/role.enum';
+import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 
 @ApiTags('developers')
 @Controller('developers')
@@ -36,20 +37,23 @@ export class DevelopersController {
   }
 
   @Get()
-  @ApiOperation({ summary: 'Get all developers with optional filters' })
-  @ApiResponse({ status: 200, type: [DeveloperResponseDto] })
-  @ApiQuery({ name: 'skill', required: false, type: String, description: 'Filter by skill' })
-  @ApiQuery({ name: 'experience', required: false, type: String, description: 'Filter by experience level' })
-  @ApiQuery({ name: 'page', required: false, type: Number, description: 'Page number' })
-  @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Items per page' })
+  @ApiOperation({ summary: 'Get all developers with filters and pagination' })
+  @ApiQuery({ 
+    name: 'skill', 
+    required: false, 
+    type: String,
+    description: 'Filter by skills (comma-separated or multiple params)',
+    example: 'React,Node.js' // Show comma-separated example in Swagger
+  })
+  @ApiQuery({ name: 'experience', required: false, type: String })
   async findAll(
-    @Query('skill') skill?: string,
+    @Query() paginationQuery: PaginationQueryDto,
+    @Query('skill') skill?: string | string[], // CAN BE STRING OR ARRAY
     @Query('experience') experience?: string,
-    @Query('page') page?: number,
-    @Query('limit') limit?: number,
-  ): Promise<DeveloperResponseDto[]> {
-    return this.developersService.findAll(skill, experience, page, limit);
+  ) {
+    return this.developersService.findAll(paginationQuery, skill, experience);
   }
+
 
   @Get(':id')
   @ApiOperation({ summary: 'Get single developer by ID' })
@@ -59,15 +63,16 @@ export class DevelopersController {
   }
 
   @Get(':id/recommended-projects')
-  @ApiOperation({ summary: 'Get recommended projects for developer' })
-  @ApiResponse({ status: 200, type: [RecommendedProjectResponseDto] })
-  @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Maximum results' })
+  @ApiOperation({ summary: 'Get recommended projects for developer with pagination' })
+  @ApiResponse({ status: 200, description: 'Paginated list of recommended projects' })
   async getRecommendedProjects(
     @Param('id') id: string,
-    @Query('limit') limit?: number,
-  ): Promise<RecommendedProjectResponseDto[]> {
-    return this.developersService.getRecommendedProjects(id, limit);
+    @Query() paginationQuery: PaginationQueryDto, 
+  ) {
+    
+    return this.developersService.getRecommendedProjects(id, paginationQuery);
   }
+
 
   @Patch(':id')
   @UseGuards(JwtAuthGuard, RolesGuard)

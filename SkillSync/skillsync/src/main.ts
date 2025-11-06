@@ -10,7 +10,16 @@ async function bootstrap() {
   app.enableCors();
 
   // Global validation pipe
-  app.useGlobalPipes(new ValidationPipe());
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: false,
+      transform: true, // Ensures payload objects are instances of their DTO classes
+      transformOptions: {
+        enableImplicitConversion: true, // Automatically convert query strings to their primitive types
+      },
+    }),
+  );
 
   // Swagger configuration
   const config = new DocumentBuilder()
@@ -31,4 +40,6 @@ bootstrap();
 
 
 
+ 
 
+ 
