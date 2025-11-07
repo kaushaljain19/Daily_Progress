@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsString, IsArray, IsEnum, IsOptional } from 'class-validator';
+import { IsNotEmpty, IsString, IsArray, IsEnum, IsOptional ,ArrayNotEmpty,MinLength } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { Experience } from '../../common/enums/experience.enum';
 
@@ -18,7 +18,9 @@ export class CreateDeveloperDto {
   })
   @IsNotEmpty()
   @IsArray()
-  @IsString({ each: true })
+  @ArrayNotEmpty({ message: 'Skills array cannot be empty' })
+  @IsString({ each: true, message: 'Each skill must be a string' })
+  @MinLength(1, { each: true, message: 'Each skill must not be empty' })
   skills: string[];
 
   @ApiProperty({ 

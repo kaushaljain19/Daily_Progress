@@ -9,8 +9,16 @@ import {
   Query,
   UseGuards,
   Request,
+  ForbiddenException,
+  NotFoundException,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse, ApiQuery } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiBearerAuth,
+  ApiResponse,
+  ApiQuery,
+} from '@nestjs/swagger';
 import { ProjectsService } from './projects.service';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
@@ -32,9 +40,16 @@ export class ProjectsController {
   @Roles(Role.CLIENT)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Create new project (Client only)' })
-  @ApiResponse({ status: 201, type: ProjectResponseDto, description: 'Project created successfully' })
+  @ApiResponse({
+    status: 201,
+    type: ProjectResponseDto,
+    description: 'Project created successfully',
+  })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  @ApiResponse({ status: 403, description: 'Forbidden - Only clients can create projects' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - Only clients can create projects',
+  })
   async create(
     @Request() req,
     @Body() createProjectDto: CreateProjectDto,
@@ -45,76 +60,81 @@ export class ProjectsController {
   // ========== UPDATED WITH PAGINATION ==========
   @Get()
   @ApiOperation({ summary: 'Get all projects with pagination and filters' })
-  @ApiQuery({ 
-    name: 'skill', 
-    required: false, 
-    type: String, 
-    description: 'Filter by required skills (comma-separated or multiple params, AND logic)' 
+  @ApiQuery({
+    name: 'skill',
+    required: false,
+    type: String,
+    description:
+      'Filter by required skills (comma-separated or multiple params, AND logic)',
   })
-  @ApiQuery({ 
-    name: 'status', 
-    required: false, 
-    type: String, 
-    description: 'Filter by project status (open, in_progress, completed, cancelled)' 
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    type: String,
+    description:
+      'Filter by project status (open, in_progress, completed, cancelled)',
   })
   async findAll(
     @Query() paginationQuery: PaginationQueryDto, // CHANGED: Use DTO
-    @Query('skill') skill?: string | string[],    // CHANGED: Support multiple skills
+    @Query('skill') skill?: string | string[], // CHANGED: Support multiple skills
     @Query('status') status?: string,
   ) {
     return this.projectsService.findAll(paginationQuery, skill, status);
   }
-  // ========== END OF UPDATE ==========
 
-  @Get('my-projects')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.CLIENT)
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'Get projects created by logged-in client' })
-  @ApiResponse({ status: 200, type: [ProjectResponseDto], description: 'Client\'s projects' })
-  @ApiResponse({ status: 401, description: 'Unauthorized' })
-  @ApiResponse({ status: 403, description: 'Forbidden - Only clients can access this' })
-  async getMyProjects(@Request() req): Promise<ProjectResponseDto[]> {
-    return this.projectsService.findByClientId(req.user.userId);
-  }
+
+  
 
   @Get(':id')
   @ApiOperation({ summary: 'Get single project by ID' })
-  @ApiResponse({ status: 200, type: ProjectResponseDto, description: 'Project details' })
+  @ApiResponse({
+    status: 200,
+    type: ProjectResponseDto,
+    description: 'Project details',
+  })
   @ApiResponse({ status: 404, description: 'Project not found' })
   async findOne(@Param('id') id: string): Promise<ProjectResponseDto> {
     return this.projectsService.findOne(id);
   }
 
-  
   @Get(':id/recommended-developers')
-  @ApiOperation({ summary: 'Get recommended developers for project with pagination' })
-  @ApiResponse({ 
-    status: 200, 
-    description: 'Paginated list of matching developers with match percentage' 
+  @ApiOperation({
+    summary: 'Get recommended developers for project with pagination',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Paginated list of matching developers with match percentage',
   })
   @ApiResponse({ status: 404, description: 'Project not found' })
   async getRecommendedDevelopers(
     @Param('id') id: string,
-    @Query() paginationQuery: PaginationQueryDto, 
+    @Query() paginationQuery: PaginationQueryDto,
   ) {
     return this.projectsService.getRecommendedDevelopers(id, paginationQuery);
   }
-  
 
   @Patch(':id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.CLIENT)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Update project (Client only - own projects)' })
-  @ApiResponse({ status: 200, type: ProjectResponseDto, description: 'Project updated successfully' })
+  @ApiResponse({
+    status: 200,
+    type: ProjectResponseDto,
+    description: 'Project updated successfully',
+  })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  @ApiResponse({ status: 403, description: 'Forbidden - Only project owner can update' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - Only project owner can update',
+  })
   @ApiResponse({ status: 404, description: 'Project not found' })
   async update(
     @Param('id') id: string,
     @Body() updateProjectDto: UpdateProjectDto,
+    @Request() req,
   ): Promise<ProjectResponseDto> {
+    
     return this.projectsService.update(id, updateProjectDto);
   }
 
@@ -125,9 +145,16 @@ export class ProjectsController {
   @ApiOperation({ summary: 'Delete project (Client only - own projects)' })
   @ApiResponse({ status: 200, description: 'Project deleted successfully' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  @ApiResponse({ status: 403, description: 'Forbidden - Only project owner can delete' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - Only project owner can delete',
+  })
   @ApiResponse({ status: 404, description: 'Project not found' })
-  async remove(@Param('id') id: string): Promise<{ message: string }> {
+  async remove(
+    @Param('id') id: string,
+    @Request() req,
+  ): Promise<{ message: string }> {
+   
     await this.projectsService.remove(id);
     return { message: 'Project deleted successfully' };
   }

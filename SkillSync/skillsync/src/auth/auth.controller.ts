@@ -5,7 +5,7 @@ import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { AuthResponseDto } from './dto/auth-response.dto';
 
-@ApiTags('dfged')
+@ApiTags('auth routes')
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}

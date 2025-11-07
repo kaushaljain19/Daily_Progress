@@ -11,7 +11,7 @@ export class RegisterDto {
   @IsNotEmpty()
   email: string;
 
-  @ApiProperty({ 
+  @ApiProperty({  
     example: 'password123', 
     minLength: 6,
     description: 'User password (minimum 6 characters)'
