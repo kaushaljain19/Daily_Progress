@@ -17,7 +17,6 @@ const API_TIMEOUT = 15000;
 @Injectable()
 export class EmpService {
   private axiosInstance: AxiosInstance;
-  private positionsCache: any[] | null = null;
 
   constructor(private configService: ConfigService) {
     this.axiosInstance = axios.create({
@@ -70,31 +69,15 @@ export class EmpService {
     }
   }
 
-  
-  private async fetchAllPositions(): Promise<any[]> {
-    if (this.positionsCache) {
-      return this.positionsCache;
-    }
-
-    try {
-      const response = await this.axiosInstance.get('/positions');
-      const positions = response.data.data || [];
-      this.positionsCache = positions;
-      return positions;
-    } catch {
-      return [];
-    }
-  }
-
- 
   private async fetchJobDetails(
     positionId?: number,
   ): Promise<JobDetailsResponse | null> {
     if (!positionId) return null;
 
     try {
-      const positions = await this.fetchAllPositions();
-      const position = positions.find((p) => p.id === positionId);
+      
+      const response = await this.axiosInstance.get(`/positions/${positionId}`);
+      const position = response.data.data;
 
       if (position) {
         return {
@@ -108,7 +91,6 @@ export class EmpService {
     }
   }
 
-  
   private async fetchEmploymentDetails(
     empId?: number,
   ): Promise<EmploymentDetailsResponse | null> {
@@ -134,7 +116,6 @@ export class EmpService {
   }
 
   private async mapEmployee(raw: SageHREmployee): Promise<Employees> {
-    
     const jobDetails = await this.fetchJobDetails(raw.position_id);
     const empDetails = await this.fetchEmploymentDetails(raw.id);
 
@@ -170,10 +151,10 @@ export class EmpService {
     };
   }
 
-  async findAll(): Promise<{ data: Employees[]; meta: any }> {
+  async findAll(page: number = 1): Promise<{ data: Employees[]; meta: any }> {
     try {
       const response = await this.axiosInstance.get(
-        '/employees?page=1&team_history=true&employment_status_history=true&position_history=true',
+        `/employees?page=${page}&team_history=true&employment_status_history=true&position_history=true`,
       );
       const employeesRaw: SageHREmployee[] = response.data.data;
       const meta = response.data.meta;

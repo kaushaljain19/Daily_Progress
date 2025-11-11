@@ -5,8 +5,3 @@ export class EmployeeListResponseDto {
   data: Employees[];
   meta: any;
 }
-
-export class EmployeeResponseDto {
-  message: string;
-  data: Employees;
-}

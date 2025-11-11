@@ -1,19 +1,30 @@
-import { Controller, Get, Param } from '@nestjs/common';
-import { EmpService } from './emp.service';
+import { Controller, Get, Param, HttpCode, HttpStatus,Query} from '@nestjs/common';
+ import { EmpService } from './emp.service';
+  import { EmployeeListResponseDto } from './dto/EmployeeListResponseDto.dto';
+  import { EmployeeResponseDto } from './dto/EmployeeResponseDto.dto';
 
-@Controller('employees')
-export class EmpController {
+ @Controller('employees')
+ export class EmpController {
   constructor(private readonly empService: EmpService) {}
-
   @Get()
-  async getAll() {
-    const result = await this.empService.findAll();
-    return { message: 'Employees list fetched successfully', ...result };
-  }
+  async getAll(@Query('page') page?: string): Promise<EmployeeListResponseDto> {
 
-  @Get(':id')
-  async getOne(@Param('id') id: string) {
-    const employee = await this.empService.findOne(id);
-    return { message: `Employee ${id} details`, data: employee };
+    const pageNumber = parseInt(page||'1') || 1;
+    const result = await this.empService.findAll(pageNumber);
+
+    return {
+      message: 'Employees list fetched successfully',
+      data: result.data,
+      meta: result.meta,
+    };
   }
-}
+  @Get(':id')
+  async getOne(@Param('id') id: string): Promise<EmployeeResponseDto> {
+    const employee = await this.empService.findOne(id);
+    return {
+      message: 'Employee details fetched successfully',
+      data: employee,
+    };
+  }
+ } 
+
