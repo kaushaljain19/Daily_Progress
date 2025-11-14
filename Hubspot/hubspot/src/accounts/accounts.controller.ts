@@ -11,5 +11,9 @@ export class AccountsController {
     return await this.accountsService.findAll(query);
   }
 
-
+ @Get(':id')
+  async findOne(@Param('id') id: string) {
+    return await this.accountsService.findOne(id);
+  }
+  
 }

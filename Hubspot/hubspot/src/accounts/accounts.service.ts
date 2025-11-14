@@ -16,7 +16,7 @@ export class AccountsService {
     private readonly httpService: HttpService,
     private readonly configService: ConfigService,
   ) {
-   
+    // Fix: Add default values
     this.accessToken = this.configService.get<string>('hubspot.accessToken') || '';
     this.apiBaseUrl = this.configService.get<string>('hubspot.apiBaseUrl') || 'https://api.hubapi.com';
   }
@@ -126,7 +126,50 @@ export class AccountsService {
     }
   }
 
+  async findOne(id: string): Promise<Account> {
+    try {
+      const url = `${this.apiBaseUrl}/crm/v3/objects/companies/${id}`;
+      
+      const params = {
+        properties: [
+          'name',
+          'domain',
+          'industry',
+          'annualrevenue',
+          'phone',
+          'city',
+          'state',
+          'zip',
+          'country',
+          'address',
+          'description',
+          'hubspot_owner_id',
+          'createdate',
+          'hs_lastmodifieddate',
+        ].join(','),
+      };
 
+      const response = await firstValueFrom(
+        this.httpService.get(url, {
+          headers: { Authorization: `Bearer ${this.accessToken}` },
+          params,
+        }),
+      );
+
+      return this.mapToAccount(response.data);
+    } catch (error: any) {
+      this.logger.error(`Error fetching account ${id}`, error.stack);
+      
+      if (error.response?.status === 404) {
+        throw new HttpException('Account not found', HttpStatus.NOT_FOUND);
+      }
+      
+      throw new HttpException(
+        error.response?.data?.message || 'Failed to fetch account',
+        error.response?.status || HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
 
   private mapToAccount(hubspotCompany: any): Account {
     const props = hubspotCompany.properties || {};
