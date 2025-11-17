@@ -1,19 +1,21 @@
-import { Controller, Get, Param, Query } from '@nestjs/common';
+import { Controller, Get, Param, Query, UsePipes } from '@nestjs/common';
 import { AccountsService } from './accounts.service';
 import { AccountQueryDto } from './dto/account-query.dto';
+import { SanitizePipe } from '../common/pipes/sanitize.pipe';
 
 @Controller('accounts')
 export class AccountsController {
   constructor(private readonly accountsService: AccountsService) {}
 
   @Get()
+  @UsePipes(new SanitizePipe())
   async findAll(@Query() query: AccountQueryDto) {
     return await this.accountsService.findAll(query);
   }
 
- @Get(':id')
+  @Get(':id')
+  @UsePipes(new SanitizePipe())
   async findOne(@Param('id') id: string) {
     return await this.accountsService.findOne(id);
   }
-  
 }

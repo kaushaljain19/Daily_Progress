@@ -1,3 +1,13 @@
+
+export interface Address {
+  street: string;
+  city: string;
+  state: string;
+  zip_code: string;
+  country: string;
+  location_type: string;
+}
+
 export interface Account {
   id: string;
   owner_id: string;
@@ -6,15 +16,8 @@ export interface Account {
   industries: string[];
   annual_revenue: string;
   website: string;
-  addresses: {
-    street: string;
-    city: string;
-    state: string;
-    zip_code: string;
-    country: string;
-    location_type: string;
-  }[];
+  addresses: Address[];
   phone_numbers: string[];
-  created_at: string;
-  updated_at: string;
+  created_at: string; // ISO Date string
+  updated_at: string; // ISO Date string
 }

@@ -2,7 +2,8 @@ import { Injectable, HttpException, HttpStatus, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
-import { tokenStorage } from './token.storage';
+import { TokenStorageService } from './token.storage';
+
 
 @Injectable()
 export class AuthService {
@@ -16,6 +17,7 @@ export class AuthService {
   constructor(
     private readonly httpService: HttpService,
     private readonly configService: ConfigService,
+    private readonly tokenStorage: TokenStorageService,
   ) {
     this.clientId = this.configService.get<string>('hubspot.clientId') || '';
     this.clientSecret = this.configService.get<string>('hubspot.clientSecret') || '';
@@ -23,36 +25,35 @@ export class AuthService {
     this.authUrl = this.configService.get<string>('hubspot.authUrl') || '';
     this.tokenUrl = this.configService.get<string>('hubspot.tokenUrl') || '';
 
-    if (!this.clientId || !this.clientSecret || !this.redirectUri) {
-      this.logger.error('OAuth credentials not configured properly in .env file');
-      throw new Error('Missing OAuth configuration');
+    if (!this.clientId || !this.clientSecret) {
+      throw new Error('OAuth credentials missing in .env file');
     }
   }
 
-  
+  /**
+   * Generate OAuth authorization URL
+   */
   getAuthorizationUrl(): string {
-    const scopes = [
-      'crm.objects.contacts.read',
-      'crm.objects.companies.read',
-      'crm.objects.deals.read',
-    ].join(' ');
-
+    const scopes = 'crm.objects.contacts.read crm.objects.companies.read crm.objects.deals.read';
+    
     const params = new URLSearchParams({
       client_id: this.clientId,
       redirect_uri: this.redirectUri,
       scope: scopes,
     });
 
-    const url = `${this.authUrl}?${params.toString()}`;
-    this.logger.log('Generated authorization URL');
-    return url;
+    return `${this.authUrl}?${params.toString()}`;
   }
 
-  
+  /**
+   * Exchange authorization code for tokens
+   */
   async exchangeCodeForTokens(code: string): Promise<any> {
-    try {
-      this.logger.log('Exchanging authorization code for tokens');
+    if (!code || code.trim() === '') {
+      throw new HttpException('Authorization code required', HttpStatus.BAD_REQUEST);
+    }
 
+    try {
       const response = await firstValueFrom(
         this.httpService.post(
           this.tokenUrl,
@@ -61,54 +62,41 @@ export class AuthService {
             client_id: this.clientId,
             client_secret: this.clientSecret,
             redirect_uri: this.redirectUri,
-            code: code,
+            code: code.trim(),
           }),
-          {
-            headers: {
-              'Content-Type': 'application/x-www-form-urlencoded',
-            },
-          },
+          { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } },
         ),
       );
 
-      const { access_token, refresh_token, expires_in, token_type } = response.data;
+      const { access_token, refresh_token, expires_in } = response.data;
       
-      // Store tokens in memory
-      tokenStorage.setTokens(access_token, refresh_token, expires_in);
-      
-      this.logger.log('Successfully exchanged code for tokens');
-      
-      return {
-        access_token,
-        refresh_token,
-        expires_in,
-        token_type,
-      };
+      this.tokenStorage.setTokens(access_token, refresh_token, expires_in);
+      this.logger.log('Tokens stored successfully');
+
+      return response.data;
     } catch (error: any) {
-      this.logger.error('Failed to exchange code for tokens', error.stack);
-      
-      const errorMessage = error.response?.data?.message || 
-                          error.response?.data?.error_description || 
-                          'Failed to exchange authorization code';
-      
-      throw new HttpException(errorMessage, error.response?.status || HttpStatus.BAD_REQUEST);
+      this.logger.error('Token exchange failed', error.stack);
+      throw new HttpException(
+        error.response?.data?.message || 'Failed to exchange code',
+        HttpStatus.BAD_REQUEST,
+      );
     }
   }
 
-  
+  /**
+   * Refresh access token using refresh token
+   */
   async refreshAccessToken(): Promise<string> {
+    const refreshToken = this.tokenStorage.getRefreshToken();
+
+    if (!refreshToken) {
+      throw new HttpException(
+        'No refresh token. Please login at /auth/login',
+        HttpStatus.UNAUTHORIZED,
+      );
+    }
+
     try {
-      const refreshToken = tokenStorage.getRefreshToken();
-
-      if (!refreshToken) {
-        throw new HttpException(
-          'No refresh token available. Please authenticate first.',
-          HttpStatus.UNAUTHORIZED,
-        );
-      }
-
-      this.logger.log('Refreshing access token');
-
       const response = await firstValueFrom(
         this.httpService.post(
           this.tokenUrl,
@@ -118,67 +106,61 @@ export class AuthService {
             client_secret: this.clientSecret,
             refresh_token: refreshToken,
           }),
-          {
-            headers: {
-              'Content-Type': 'application/x-www-form-urlencoded',
-            },
-          },
+          { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } },
         ),
       );
 
-      const { access_token, refresh_token: newRefreshToken, expires_in, token_type } = response.data;
+      const { access_token, refresh_token: new_refresh, expires_in } = response.data;
       
-      // Update stored tokens
-      tokenStorage.setTokens(access_token, newRefreshToken, expires_in);
-      
-      this.logger.log('Successfully refreshed access token');
-      
+      this.tokenStorage.setTokens(access_token, new_refresh, expires_in);
+      this.logger.log('Access token refreshed');
+
       return access_token;
     } catch (error: any) {
-      this.logger.error('Failed to refresh access token', error.stack);
-      
-      // Clear invalid tokens
-      tokenStorage.clear();
-      
-      const errorMessage = error.response?.data?.message || 
-                          error.response?.data?.error_description || 
-                          'Failed to refresh access token';
+      this.logger.error('Token refresh failed', error.stack);
+      this.tokenStorage.clear();
       
       throw new HttpException(
-        `Token refresh failed: ${errorMessage}. Please re-authenticate.`,
-        error.response?.status || HttpStatus.UNAUTHORIZED,
+        'Token refresh failed. Please re-authenticate at /auth/login',
+        HttpStatus.UNAUTHORIZED,
       );
     }
   }
 
-  
+  /**
+   * Get valid access token with auto-refresh
+   */
   async getValidAccessToken(): Promise<string> {
-    let accessToken = tokenStorage.getAccessToken();
+    let token = this.tokenStorage.getAccessToken();
 
-    
-    if (!accessToken) {
-      this.logger.log('Access token expired, refreshing...');
-      accessToken = await this.refreshAccessToken();
+    // Auto-refresh if expired
+    if (!token) {
+      this.logger.log('Token expired, auto-refreshing...');
+      token = await this.refreshAccessToken();
     }
 
-    if (!accessToken) {
+    if (!token) {
       throw new HttpException(
-        'No valid access token. Please authenticate at /auth/login first.',
+        'Not authenticated. Please login at /auth/login',
         HttpStatus.UNAUTHORIZED,
       );
     }
 
-    return accessToken;
+    return token;
   }
 
-  
+  /**
+   * Check if user is authenticated
+   */
   isAuthenticated(): boolean {
-    return tokenStorage.isAuthenticated();
+    return this.tokenStorage.isAuthenticated();
   }
 
- 
+  /**
+   * Logout - clear tokens
+   */
   logout(): void {
-    tokenStorage.clear();
-    this.logger.log('User logged out, tokens cleared');
+    this.tokenStorage.clear();
+    this.logger.log('User logged out');
   }
 }

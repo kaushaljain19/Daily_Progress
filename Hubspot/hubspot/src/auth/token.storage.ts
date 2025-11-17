@@ -1,52 +1,58 @@
-import { TokenStorage } from './interfaces/tokens.interface';
+import { Injectable } from '@nestjs/common';
 
-/**
- * Simple in-memory token storage
- * Production mein database ya Redis use karo
- */
-class TokenStorageService {
-  private storage: TokenStorage = {
-    accessToken: null,
-    refreshToken: null,
-    expiresAt: null,
-  };
 
+@Injectable()
+export class TokenStorageService {
+  private accessToken: string = '';
+  private refreshToken: string = '';
+  private expiresAt: number = 0;
+
+  /**
+   * Store tokens with expiry time
+   */
   setTokens(accessToken: string, refreshToken: string, expiresIn: number): void {
-    this.storage.accessToken = accessToken;
-    this.storage.refreshToken = refreshToken;
-    // Buffer of 5 minutes before actual expiry
-    this.storage.expiresAt = Date.now() + (expiresIn - 300) * 1000;
+    this.accessToken = accessToken;
+    this.refreshToken = refreshToken;
+    // 5-minute buffer before expiry
+    this.expiresAt = Date.now() + (expiresIn - 300) * 1000;
   }
 
-  getAccessToken(): string | null {
-    if (this.isTokenExpired()) {
-      return null;
-    }
-    return this.storage.accessToken;
+  /**
+   * Get access token if not expired
+   */
+  getAccessToken(): string {
+    if (this.isExpired()) return '';
+    return this.accessToken;
   }
 
-  getRefreshToken(): string | null {
-    return this.storage.refreshToken;
+  /**
+   * Get refresh token
+   */
+  getRefreshToken(): string {
+    return this.refreshToken;
   }
 
-  isTokenExpired(): boolean {
-    if (!this.storage.expiresAt) {
-      return true;
-    }
-    return Date.now() >= this.storage.expiresAt;
+  /**
+   * Check if token is expired
+   */
+  isExpired(): boolean {
+    if (!this.expiresAt) return true;
+    return Date.now() >= this.expiresAt;
   }
 
+  /**
+   * Check if authenticated
+   */
   isAuthenticated(): boolean {
-    return this.storage.refreshToken !== null;
+    return this.refreshToken !== '';
   }
 
+  /**
+   * Clear all tokens
+   */
   clear(): void {
-    this.storage = {
-      accessToken: null,
-      refreshToken: null,
-      expiresAt: null,
-    };
+    this.accessToken = '';
+    this.refreshToken = '';
+    this.expiresAt = 0;
   }
 }
-
-export const tokenStorage = new TokenStorageService();
