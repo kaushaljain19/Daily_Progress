@@ -1,9 +1,7 @@
 import { Injectable, HttpException, HttpStatus, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { HttpService } from '@nestjs/axios';
-import { firstValueFrom } from 'rxjs';
+import axios from 'axios';
 import { TokenStorageService } from './token.storage';
-
 
 @Injectable()
 export class AuthService {
@@ -15,7 +13,6 @@ export class AuthService {
   private readonly tokenUrl: string;
 
   constructor(
-    private readonly httpService: HttpService,
     private readonly configService: ConfigService,
     private readonly tokenStorage: TokenStorageService,
   ) {
@@ -54,18 +51,16 @@ export class AuthService {
     }
 
     try {
-      const response = await firstValueFrom(
-        this.httpService.post(
-          this.tokenUrl,
-          new URLSearchParams({
-            grant_type: 'authorization_code',
-            client_id: this.clientId,
-            client_secret: this.clientSecret,
-            redirect_uri: this.redirectUri,
-            code: code.trim(),
-          }),
-          { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } },
-        ),
+      const response = await axios.post(
+        this.tokenUrl,
+        new URLSearchParams({
+          grant_type: 'authorization_code',
+          client_id: this.clientId,
+          client_secret: this.clientSecret,
+          redirect_uri: this.redirectUri,
+          code: code.trim(),
+        }),
+        { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } },
       );
 
       const { access_token, refresh_token, expires_in } = response.data;
@@ -97,17 +92,15 @@ export class AuthService {
     }
 
     try {
-      const response = await firstValueFrom(
-        this.httpService.post(
-          this.tokenUrl,
-          new URLSearchParams({
-            grant_type: 'refresh_token',
-            client_id: this.clientId,
-            client_secret: this.clientSecret,
-            refresh_token: refreshToken,
-          }),
-          { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } },
-        ),
+      const response = await axios.post(
+        this.tokenUrl,
+        new URLSearchParams({
+          grant_type: 'refresh_token',
+          client_id: this.clientId,
+          client_secret: this.clientSecret,
+          refresh_token: refreshToken,
+        }),
+        { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } },
       );
 
       const { access_token, refresh_token: new_refresh, expires_in } = response.data;
@@ -164,3 +157,13 @@ export class AuthService {
     this.logger.log('User logged out');
   }
 }
+
+
+
+
+
+
+
+
+
+

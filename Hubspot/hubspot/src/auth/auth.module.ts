@@ -6,7 +6,7 @@ import { AuthService } from './auth.service';
 import { TokenStorageService } from './token.storage';
 
 @Module({
-  imports: [HttpModule, ConfigModule],
+  imports: [ ConfigModule],
   controllers: [AuthController],
   providers: [AuthService, TokenStorageService],
   exports: [AuthService],
