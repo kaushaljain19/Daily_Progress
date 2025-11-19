@@ -1,11 +1,12 @@
+import { ApiError } from './api-error.interface';
+
 export interface PaginatedResponse<T> {
   data: T[];
   metadata: {
     total: number;
-    page: number;
     limit: number;
-    totalPages: number;
-    hasNext: boolean;
-    hasPrevious: boolean;
+    hasMore: boolean;
+    after?: string;
   };
+  errors?: ApiError[];
 }

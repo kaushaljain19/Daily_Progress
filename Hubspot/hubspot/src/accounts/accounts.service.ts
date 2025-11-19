@@ -4,7 +4,7 @@ import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import { Account, Address } from './interfaces/account.interface';
 import { PaginatedResponse } from '../common/interfaces/paginated-response.interface';
-import { AccountQueryDto } from './dto/account-query.dto';
+import { PaginationDto } from '../common/dto/pagination.dto';
 import { AuthService } from '../auth/auth.service';
 import { safeString, safeArray, toISODate } from '../common/utils/helpers.utils';
 
@@ -22,40 +22,37 @@ export class AccountsService {
     this.apiBaseUrl = this.configService.get<string>('hubspot.apiBaseUrl') || 'https://api.hubapi.com';
   }
 
-  /**
-   * List accounts with pagination and filters
-   */
-  async findAll(query: AccountQueryDto): Promise<PaginatedResponse<Account>> {
+  
+   // List accounts with cursor-based pagination and filters
+   
+  async findAll(query: PaginationDto): Promise<PaginatedResponse<Account>> {
     try {
       const token = await this.authService.getValidAccessToken();
-      const { page = 1, limit = 10, created_after, updated_after } = query;
+      const { limit = 10, after, created_after, updated_after } = query;
 
-      const hasFilters = created_after || updated_after;
-      const response = hasFilters
-        ? await this.searchAccounts(token, page, limit, created_after, updated_after)
-        : await this.listAccounts(token, page, limit);
+    
+      const response = await this.searchAccounts(token, limit, after, created_after, updated_after);
 
       const results = response.results || [];
-      const total = response.total || results.length;
+      const total = response.total || 0;
+      const paging = response.paging || {};
 
       const accounts = results.map((c: any) => this.mapToAccount(c));
 
       return {
         data: accounts,
         metadata: {
-          total,
-          page,
-          limit,
-          totalPages: Math.ceil(total / limit),
-          hasNext: page * limit < total,
-          hasPrevious: page > 1,
+          total: total,
+          limit: limit,
+          hasMore: !!paging?.next?.after,
+          after: paging?.next?.after,
         },
       };
     } catch (error: any) {
-      this.logger.error('Error fetching accounts', error);
+      this.logger.error('Error fetching accounts', error.stack);
       throw new HttpException(
-        error.message || 'Failed to fetch accounts',
-        error.status || HttpStatus.INTERNAL_SERVER_ERROR,
+        error.response?.data?.message || 'Failed to fetch accounts',
+        error.response?.status || HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
   }
@@ -83,42 +80,30 @@ export class AccountsService {
 
       return this.mapToAccount(response.data);
     } catch (error: any) {
-      this.logger.error(`Error fetching account ${cleanId}`, error);
+      this.logger.error(`Error fetching account ${cleanId}`, error.stack);
 
       if (error.response?.status === 404) {
         throw new HttpException(`Account ${cleanId} not found`, HttpStatus.NOT_FOUND);
       }
 
-      throw new HttpException('Failed to fetch account', HttpStatus.INTERNAL_SERVER_ERROR);
+      throw new HttpException(
+        error.response?.data?.message || 'Failed to fetch account',
+        error.response?.status || HttpStatus.INTERNAL_SERVER_ERROR,
+      );
     }
   }
 
-  private async listAccounts(token: string, page: number, limit: number) {
-    const url = `${this.apiBaseUrl}/crm/v3/objects/companies`;
-    
-    const response = await firstValueFrom(
-      this.httpService.get(url, {
-        headers: { Authorization: `Bearer ${token}` },
-        params: {
-          limit,
-          properties: this.properties,
-          after: page > 1 ? ((page - 1) * limit).toString() : undefined,
-        },
-      }),
-    );
-
-    return response.data;
-  }
-
+  
   private async searchAccounts(
     token: string,
-    page: number,
     limit: number,
+    after?: string,
     createdAfter?: string,
     updatedAfter?: string,
   ) {
-    const filters: { propertyName: string; operator: string; value: string }[] = [];
+    const filters: any[] = [];
 
+    // Add date filters if provided
     if (createdAfter) {
       filters.push({
         propertyName: 'createdate',
@@ -137,17 +122,26 @@ export class AccountsService {
 
     const url = `${this.apiBaseUrl}/crm/v3/objects/companies/search`;
     
+    const requestBody: any = {
+      properties: this.properties.split(','),
+      limit,
+      sorts: [{ propertyName: 'createdate', direction: 'DESCENDING' }],
+    };
+
+    // Only add filterGroups if filters exist
+    if (filters.length > 0) {
+      requestBody.filterGroups = [{ filters }];
+    }
+
+    // Add cursor for pagination
+    if (after) {
+      requestBody.after = after;
+    }
+
     const response = await firstValueFrom(
-      this.httpService.post(
-        url,
-        {
-          filterGroups: filters.length > 0 ? [{ filters }] : undefined,
-          properties: this.properties.split(','),
-          limit,
-          after: page > 1 ? ((page - 1) * limit).toString() : undefined,
-        },
-        { headers: { Authorization: `Bearer ${token}` } },
-      ),
+      this.httpService.post(url, requestBody, {
+        headers: { Authorization: `Bearer ${token}` },
+      }),
     );
 
     return response.data;
@@ -156,7 +150,6 @@ export class AccountsService {
   private mapToAccount(hubspotCompany: any): Account {
     const props = hubspotCompany.properties || {};
 
-    // Build address
     const address: Address = {
       street: safeString(props.address),
       city: safeString(props.city),

@@ -22,7 +22,7 @@ export class AuthService {
     this.authUrl = this.configService.get<string>('hubspot.authUrl') || '';
     this.tokenUrl = this.configService.get<string>('hubspot.tokenUrl') || '';
 
-    if (!this.clientId || !this.clientSecret) {
+    if (!this.clientId || !this.clientSecret || !this.redirectUri|| !this.authUrl|| !this.tokenUrl) {
       throw new Error('OAuth credentials missing in .env file');
     }
   }
@@ -34,7 +34,7 @@ export class AuthService {
     const scopes = 'crm.objects.contacts.read crm.objects.companies.read crm.objects.deals.read';
     
     const params = new URLSearchParams({
-      client_id: this.clientId,
+      client_id: this.clientId, 
       redirect_uri: this.redirectUri,
       scope: scopes,
     });

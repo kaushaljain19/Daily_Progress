@@ -4,7 +4,8 @@ import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import { Contact } from './interfaces/contact.interface';
 import { PaginatedResponse } from '../common/interfaces/paginated-response.interface';
-import { ContactQueryDto } from './dto/contact-query.dto';
+import { ApiError } from '../common/interfaces/api-error.interface';
+import { PaginationDto } from '../common/dto/pagination.dto';
 import { AuthService } from '../auth/auth.service';
 import { safeString, safeArray, toISODate } from '../common/utils/helpers.utils';
 
@@ -22,53 +23,56 @@ export class ContactsService {
     this.apiBaseUrl = this.configService.get<string>('hubspot.apiBaseUrl') || 'https://api.hubapi.com';
   }
 
-  /**
-   * List contacts with pagination and filters
-   */
-  async findAll(query: ContactQueryDto): Promise<PaginatedResponse<Contact>> {
+  
+  async findAll(query: PaginationDto): Promise<PaginatedResponse<Contact>> {
     try {
       const token = await this.authService.getValidAccessToken();
-      const { page = 1, limit = 10, created_after, updated_after } = query;
+      const { limit = 10, after, created_after, updated_after } = query;
 
-      // Use search API if filters exist
-      const hasFilters = created_after || updated_after;
-      const response = hasFilters
-        ? await this.searchContacts(token, page, limit, created_after, updated_after)
-        : await this.listContacts(token, page, limit);
+      
+      const response = await this.searchContacts(token, limit, after, created_after, updated_after);
 
       const results = response.results || [];
-      const total = response.total || results.length;
+      const total = response.total || 0;
+      const paging = response.paging || {};
 
-      // Map to Contact interface
+      const errors: ApiError[] = [];
+
+      // Map contacts and collect association errors
       const contacts = await Promise.all(
-        results.map((c: any) => this.mapToContact(c, token)),
+        results.map(async (c: any) => await this.mapToContact(c, token, errors)),
       );
 
-      return {
+      const contactResponse: PaginatedResponse<Contact> = {
         data: contacts,
         metadata: {
-          total,
-          page,
-          limit,
-          totalPages: Math.ceil(total / limit),
-          hasNext: page * limit < total,
-          hasPrevious: page > 1,
+          total: total,
+          limit: limit,
+          hasMore: !!paging?.next?.after,
+          after: paging?.next?.after,
         },
       };
+
+      // Include errors in response if any occurred
+      if (errors.length > 0) {
+        contactResponse.errors = errors;
+        this.logger.warn(`${errors.length} association errors occurred while fetching contacts`);
+      }
+
+      return contactResponse;
     } catch (error: any) {
-      this.logger.error('Error fetching contacts', error);
+      this.logger.error('Error fetching contacts', error.stack);
       throw new HttpException(
-        error.message || 'Failed to fetch contacts',
-        error.status || HttpStatus.INTERNAL_SERVER_ERROR,
+        error.response?.data?.message || 'Failed to fetch contacts',
+        error.response?.status || HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
   }
 
   /**
-   * Get single contact by ID
+   * Get single contact by ID with associations
    */
   async findOne(id: string): Promise<Contact> {
-    // Sanitize ID - only numbers allowed
     const cleanId = id.replace(/[^0-9]/g, '');
     
     if (!cleanId) {
@@ -86,50 +90,39 @@ export class ContactsService {
         }),
       );
 
-      return await this.mapToContact(response.data, token);
+      const errors: ApiError[] = [];
+      const contact = await this.mapToContact(response.data, token, errors);
+      
+      if (errors.length > 0) {
+        this.logger.warn(`Errors fetching associations for contact ${cleanId}`, errors);
+      }
+      
+      return contact;
     } catch (error: any) {
-      this.logger.error(`Error fetching contact ${cleanId}`, error);
+      this.logger.error(`Error fetching contact ${cleanId}`, error.stack);
 
       if (error.response?.status === 404) {
         throw new HttpException(`Contact ${cleanId} not found`, HttpStatus.NOT_FOUND);
       }
 
-      throw new HttpException('Failed to fetch contact', HttpStatus.INTERNAL_SERVER_ERROR);
+      throw new HttpException(
+        error.response?.data?.message || 'Failed to fetch contact',
+        error.response?.status || HttpStatus.INTERNAL_SERVER_ERROR,
+      );
     }
   }
 
-  /**
-   * List contacts - simple pagination
-   */
-  private async listContacts(token: string, page: number, limit: number) {
-    const url = `${this.apiBaseUrl}/crm/v3/objects/contacts`;
-    
-    const response = await firstValueFrom(
-      this.httpService.get(url, {
-        headers: { Authorization: `Bearer ${token}` },
-        params: {
-          limit,
-          properties: this.properties,
-          after: page > 1 ? ((page - 1) * limit).toString() : undefined,
-        },
-      }),
-    );
-
-    return response.data;
-  }
-
-  /**
-   * Search contacts with date filters
-   */
+  
   private async searchContacts(
     token: string,
-    page: number,
     limit: number,
+    after?: string,
     createdAfter?: string,
     updatedAfter?: string,
   ) {
-   const filters: { propertyName: string; operator: string; value: string }[] = [];
+    const filters: any[] = [];
 
+    // Add date filters if provided
     if (createdAfter) {
       filters.push({
         propertyName: 'createdate',
@@ -148,31 +141,49 @@ export class ContactsService {
 
     const url = `${this.apiBaseUrl}/crm/v3/objects/contacts/search`;
     
+    const requestBody: any = {
+      properties: this.properties.split(','),
+      limit,
+      sorts: [{ propertyName: 'createdate', direction: 'DESCENDING' }],
+    };
+
+    // Only add filterGroups if filters exist
+    if (filters.length > 0) {
+      requestBody.filterGroups = [{ filters }];
+    }
+
+    // Add cursor for pagination
+    if (after) {
+      requestBody.after = after;
+    }
+
     const response = await firstValueFrom(
-      this.httpService.post(
-        url,
-        {
-          filterGroups: filters.length > 0 ? [{ filters }] : undefined,
-          properties: this.properties.split(','),
-          limit,
-          after: page > 1 ? ((page - 1) * limit).toString() : undefined,
-        },
-        { headers: { Authorization: `Bearer ${token}` } },
-      ),
+      this.httpService.post(url, requestBody, {
+        headers: { Authorization: `Bearer ${token}` },
+      }),
     );
 
     return response.data;
   }
 
   /**
-   * Map HubSpot contact to Contact interface
+   * Map HubSpot contact to standardized Contact interface
    */
-  private async mapToContact(hubspotContact: any, token: string): Promise<Contact> {
+  private async mapToContact(hubspotContact: any, token: string, errors: ApiError[]): Promise<Contact> {
     const props = hubspotContact.properties || {};
 
-    // Fetch associations
-    const dealIds = await this.getAssociations(hubspotContact.id, 'deals', token);
-    const accountIds = await this.getAssociations(hubspotContact.id, 'companies', token);
+    // Fetch associations with error tracking
+    const dealsResult = await this.getAssociations(hubspotContact.id, 'deals', token);
+    const accountsResult = await this.getAssociations(hubspotContact.id, 'companies', token);
+
+    // Collect errors
+    if (dealsResult.error) {
+      errors.push(dealsResult.error);
+    }
+
+    if (accountsResult.error) {
+      errors.push(accountsResult.error);
+    }
 
     return {
       id: safeString(hubspotContact.id),
@@ -181,29 +192,50 @@ export class ContactsService {
       company_name: safeString(props.company),
       emails: safeArray(props.email),
       phone_numbers: safeArray(props.phone),
-      deal_ids: dealIds,
-      account_ids: accountIds,
+      deal_ids: dealsResult.data,
+      account_ids: accountsResult.data,
       created_at: toISODate(props.createdate),
       updated_at: toISODate(props.lastmodifieddate),
     };
   }
 
-  /**
-   * Get contact associations (deals, companies)
-   */
-  private async getAssociations(contactId: string, type: string, token: string): Promise<string[]> {
+  
+  private async getAssociations(
+    contactId: string,
+    type: string,
+    token: string,
+  ): Promise<{ data: string[]; error?: ApiError }> {
+    const url = `${this.apiBaseUrl}/crm/v4/objects/contacts/${contactId}/associations/${type}`;
+    
     try {
-      const url = `${this.apiBaseUrl}/crm/v4/objects/contacts/${contactId}/associations/${type}`;
-      
       const response = await firstValueFrom(
         this.httpService.get(url, {
           headers: { Authorization: `Bearer ${token}` },
         }),
       );
 
-      return response.data.results?.map((item: any) => String(item.toObjectId)) || [];
-    } catch {
-      return [];
+      const associations = response.data.results?.map((item: any) => String(item.toObjectId)) || [];
+      return { data: associations };
+    } catch (error: any) {
+      // Create detailed error object for tracking
+      const apiError: ApiError = {
+        requestUrl: url,
+        resourceId: contactId,
+        associationType: type,
+        timestamp: new Date().toISOString(),
+        response: {
+          status: error.response?.status,
+          statusText: error.response?.statusText,
+          message: error.response?.data?.message || error.message || 'Unknown error',
+        },
+      };
+
+      this.logger.warn(
+        `Failed to fetch ${type} associations for contact ${contactId}: ${apiError.response.message}`,
+      );
+
+      // Return empty data with error details
+      return { data: [], error: apiError };
     }
   }
 }

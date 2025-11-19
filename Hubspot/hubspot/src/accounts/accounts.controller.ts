@@ -1,6 +1,6 @@
 import { Controller, Get, Param, Query, UsePipes } from '@nestjs/common';
 import { AccountsService } from './accounts.service';
-import { AccountQueryDto } from './dto/account-query.dto';
+import { PaginationDto } from '../common/dto/pagination.dto';
 import { SanitizePipe } from '../common/pipes/sanitize.pipe';
 
 @Controller('accounts')
@@ -9,7 +9,7 @@ export class AccountsController {
 
   @Get()
   @UsePipes(new SanitizePipe())
-  async findAll(@Query() query: AccountQueryDto) {
+  async findAll(@Query() query: PaginationDto) {
     return await this.accountsService.findAll(query);
   }
 

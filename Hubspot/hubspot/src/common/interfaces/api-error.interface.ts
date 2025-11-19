@@ -1,6 +1,6 @@
 export interface ApiError {
   requestUrl: string;
-  contactId: string;
+  resourceId: string;
   associationType: string;
   timestamp: string;
   response: {
